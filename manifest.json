@@ -1,0 +1,29 @@
+{
+    "manifest_version": 3,
+    "id": "maibot-team.napcat-adapter",
+    "version": "2.0.0",
+    "name": "NapCat 适配器",
+    "description": "QQ 平台消息收发适配器，通过 NapCatQQ OneBot 11 协议通信",
+    "author": {
+        "name": "MaiBot Team",
+        "url": "https://github.com/Mai-with-u"
+    },
+    "license": "GPL-3.0-or-later",
+    "host_application": {
+        "min_version": "1.0.0"
+    },
+    "sdk": {
+        "min_version": "4.0.0"
+    },
+    "scopes": [
+        "message:send:text",
+        "message:send:image",
+        "message:send:emoji",
+        "message:send:forward",
+        "message:send:hybrid",
+        "session:read:detail",
+        "database:read:self",
+        "database:write:self",
+        "system:execute:command"
+    ]
+}
