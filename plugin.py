@@ -173,12 +173,15 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         if self._inbound_codec is None:
             self.ctx.logger.warning("[napcat] _handle_message_event: inbound_codec 未初始化，跳过")
             return
-        event_name, event_payload = await self._inbound_codec.build_event_payload(payload)
+        try:
+            event_name, event_payload = await self._inbound_codec.build_event_payload(payload)
+        except Exception as exc:
+            self.ctx.logger.error("[napcat] build_event_payload 失败: %s", exc)
+            return
         if not event_name:
             self.ctx.logger.debug("[napcat] _handle_message_event: event_name 空（自身消息过滤），跳过")
             return
 
-        # 频道过滤 + 正则过滤
         if not self._chat_filter.should_process(event_payload):
             self.ctx.logger.debug("[napcat] _handle_message_event: chat_filter 拒绝，跳过")
             return
@@ -186,7 +189,6 @@ class NapCatAdapterPlugin(MaiBotPlugin):
             self.ctx.logger.debug("[napcat] _handle_message_event: regex_filter 拒绝，跳过")
             return
 
-        # 去重检查
         msg_id = event_payload.get("message_id", "")
         if self._event_buffer.is_duplicate(msg_id):
             self.ctx.logger.debug("[napcat] _handle_message_event: 重复消息 %s，跳过", msg_id)
@@ -197,7 +199,6 @@ class NapCatAdapterPlugin(MaiBotPlugin):
             self.ctx.logger.debug("[napcat] _handle_message_event: transport 断连，已缓冲")
             return
 
-        # 发送前刷新缓冲区
         if self._event_buffer.size > 0:
             await self._event_buffer.flush(self.ctx.emit_event)
 
