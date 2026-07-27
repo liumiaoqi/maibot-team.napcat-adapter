@@ -10,12 +10,12 @@ import asyncio
 import json
 from typing import Any, Dict
 
-from src.plugin_runtime_v2.sdk import MaiBotPlugin, Tool
+from src.plugin_runtime_v2.sdk import MaiBotPlugin, Event, Tool
 
 from .codecs.inbound.message_codec import NapCatInboundCodec
 from .codecs.outbound.message_codec import NapCatOutboundCodec
 from .config import NapCatConfig
-from .constants import NapCatPayload
+from .types import NapCatPayload
 from .event_buffer import EventBuffer
 from .filters import NapCatChatFilter, NapCatRegexFilter
 from .heartbeat_monitor import NapCatHeartbeatMonitor
@@ -74,20 +74,36 @@ class NapCatAdapterPlugin(MaiBotPlugin):
             return
 
         # 初始化组件
-        self._query_service = NapCatQueryService(self._cfg.napcat_server.http_url)
+        _logger = self.ctx.logger
         self._sid_mapper = SessionIdMapper()
+
+        # 创建 transport（传入回调）
+        self._transport = NapCatTransportClient(
+            logger=_logger,
+            on_connection_opened=self._on_ws_connected,
+            on_connection_closed=self._on_ws_disconnected,
+            on_payload=self._handle_transport_payload,
+        )
+
+        # 创建依赖 transport 的服务
+        from .services.action_service import NapCatActionService
+        _action_service = NapCatActionService(logger=_logger, transport=self._transport)
+        self._query_service = NapCatQueryService(action_service=_action_service, logger=_logger)
+
+        # 创建 codec
         self._inbound_codec = NapCatInboundCodec(
             self_id="", query_service=self._query_service, sid_mapper=self._sid_mapper,
         )
         self._outbound_codec = NapCatOutboundCodec(sid_mapper=self._sid_mapper)
-        self._chat_filter = NapCatChatFilter(self._cfg.chat)
-        self._regex_filter = NapCatRegexFilter(self._cfg.filters)
+
+        # 创建过滤器和缓冲区
+        self._chat_filter = NapCatChatFilter(logger=_logger)
+        self._regex_filter = NapCatRegexFilter(logger=_logger)
         self._event_buffer = EventBuffer(max_size=self._cfg.buffer.event_buffer_size)
 
         # 建立 WS 连接并启动接收循环
-        self._transport = NapCatTransportClient(self._cfg)
         await self._transport.start()
-        self._heartbeat = NapCatHeartbeatMonitor(self._transport)
+        self._heartbeat = NapCatHeartbeatMonitor(logger=_logger, on_timeout=self._on_heartbeat_timeout)
         await self._heartbeat.start()
         self._recv_task = asyncio.create_task(self._recv_loop(), name="napcat-recv")
         self.ctx.logger.info("[napcat] 已连接 NapCat 服务器")
@@ -103,6 +119,17 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         if self._transport is not None:
             await self._transport.stop()
         self.ctx.logger.info("[napcat] 已断开连接")
+
+    # ── WebSocket 回调 ───────────────────────────────────────
+
+    async def _on_ws_connected(self) -> None:
+        self.ctx.logger.info("[napcat] WebSocket 已连接")
+
+    async def _on_ws_disconnected(self) -> None:
+        self.ctx.logger.warning("[napcat] WebSocket 已断开")
+
+    async def _on_heartbeat_timeout(self, reason: str) -> None:
+        self.ctx.logger.warning("[napcat] 心跳超时: %s", reason)
 
     # ── 消息接收循环 ─────────────────────────────────────────
 
@@ -177,6 +204,47 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         if meta_type == "heartbeat":
             if self._heartbeat is not None:
                 self._heartbeat.record_heartbeat()
+
+    # ── @Event：消息入站声明 ─────────────────────────────────────
+
+    @Event(name="napcat.message", description="QQ 私聊消息入站",
+           event_schema={"type": "object", "properties": {
+               "session_id": {"type": "string"},
+               "message_id": {"type": "string"},
+               "qq_user_id": {"type": "string"},
+               "sender_name": {"type": "string"},
+               "raw_message": {"type": "string"},
+               "timestamp": {"type": "number"},
+           }})
+    async def on_private_message(self) -> None:
+        """声明：QQ 私聊消息事件。"""
+        pass
+
+    @Event(name="napcat.group_message", description="QQ 群聊消息入站",
+           event_schema={"type": "object", "properties": {
+               "session_id": {"type": "string"},
+               "message_id": {"type": "string"},
+               "qq_user_id": {"type": "string"},
+               "qq_group_id": {"type": "string"},
+               "sender_name": {"type": "string"},
+               "raw_message": {"type": "string"},
+               "timestamp": {"type": "number"},
+               "is_group": {"type": "boolean"},
+           }})
+    async def on_group_message(self) -> None:
+        """声明：QQ 群聊消息事件。"""
+        pass
+
+    @Event(name="napcat.notice", description="QQ 通知事件（群成员变动等）",
+           event_schema={"type": "object", "properties": {
+               "napcat_notice_type": {"type": "string"},
+               "napcat_sub_type": {"type": "string"},
+               "qq_user_id": {"type": "string"},
+               "qq_group_id": {"type": "string"},
+           }})
+    async def on_notice(self) -> None:
+        """声明：QQ 通知事件。"""
+        pass
 
     # ── @Tool：发送消息 ───────────────────────────────────────
 
