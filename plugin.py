@@ -171,32 +171,41 @@ class NapCatAdapterPlugin(MaiBotPlugin):
     async def _handle_message_event(self, payload: NapCatPayload) -> None:
         """处理 OneBot 11 消息事件 → emit Event 到 Host。"""
         if self._inbound_codec is None:
+            self.ctx.logger.warning("[napcat] _handle_message_event: inbound_codec 未初始化，跳过")
             return
         event_name, event_payload = await self._inbound_codec.build_event_payload(payload)
         if not event_name:
-            self.ctx.logger.info("[napcat] _handle_message_event: event_name empty (self-msg filter?), skip")
+            self.ctx.logger.debug("[napcat] _handle_message_event: event_name 空（自身消息过滤），跳过")
             return
 
         # 频道过滤 + 正则过滤
         if not self._chat_filter.should_process(event_payload):
+            self.ctx.logger.debug("[napcat] _handle_message_event: chat_filter 拒绝，跳过")
             return
         if not self._regex_filter.should_process(event_payload.get("raw_message", "")):
+            self.ctx.logger.debug("[napcat] _handle_message_event: regex_filter 拒绝，跳过")
             return
 
         # 去重检查
         msg_id = event_payload.get("message_id", "")
         if self._event_buffer.is_duplicate(msg_id):
+            self.ctx.logger.debug("[napcat] _handle_message_event: 重复消息 %s，跳过", msg_id)
             return
 
         if self._transport is not None and not self._transport.is_connected:
             self._event_buffer.enqueue(event_name, event_payload)
+            self.ctx.logger.debug("[napcat] _handle_message_event: transport 断连，已缓冲")
             return
 
         # 发送前刷新缓冲区
         if self._event_buffer.size > 0:
             await self._event_buffer.flush(self.ctx.emit_event)
 
-
+        self.ctx.logger.info("[napcat] emit_event: %s session=%s user=%s raw=%s",
+                             event_name,
+                             event_payload.get("session_id", "?"),
+                             event_payload.get("qq_user_id", "?"),
+                             event_payload.get("raw_message", "")[:50])
         await self.ctx.emit_event(event_name, event_payload)
 
     async def _handle_notice_event(self, payload: NapCatPayload) -> None:
