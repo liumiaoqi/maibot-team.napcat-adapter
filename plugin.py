@@ -159,7 +159,7 @@ class NapCatAdapterPlugin(MaiBotPlugin):
     async def _handle_transport_payload(self, payload: NapCatPayload) -> None:
         """路由 WS payload 到对应处理器。"""
         post_type = payload.get("post_type", "")
-
+        self.ctx.logger.info("[napcat] 收到 payload: post_type=%s", post_type)
 
         if post_type == "message":
             await self._handle_message_event(payload)
@@ -174,7 +174,8 @@ class NapCatAdapterPlugin(MaiBotPlugin):
             return
         event_name, event_payload = await self._inbound_codec.build_event_payload(payload)
         if not event_name:
-            return  # 自身消息过滤
+            self.ctx.logger.info("[napcat] _handle_message_event: event_name empty (self-msg filter?), skip")
+            return
 
         # 频道过滤 + 正则过滤
         if not self._chat_filter.should_process(event_payload):
@@ -194,6 +195,7 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         # 发送前刷新缓冲区
         if self._event_buffer.size > 0:
             await self._event_buffer.flush(self.ctx.emit_event)
+
 
         await self.ctx.emit_event(event_name, event_payload)
 
