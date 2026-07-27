@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any, Dict
 
 from src.plugin_runtime_v2.sdk import MaiBotPlugin, Event, Tool
@@ -58,11 +59,19 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         self._event_buffer = EventBuffer()
         self._recv_task: asyncio.Task | None = None
 
+    def _load_config(self) -> None:
+        """从插件目录下的 config.toml 加载配置。"""
+        import inspect
+        plugin_file = Path(inspect.getfile(type(self)))
+        config_path = plugin_file.parent / "config.toml"
+        self._cfg = NapCatConfig.from_toml(config_path)
+
     # ── 生命周期 ──────────────────────────────────────────────
 
     async def on_load(self) -> None:
         """插件加载：验证配置、初始化组件、建立 WS 连接。"""
-        self.ctx.logger.info("[napcat] on_load 开始")
+        self._load_config()
+        self.ctx.logger.info("[napcat] on_load 开始, ws_url=%s", self._cfg.napcat_server.ws_url)
 
         # 验证配置
         errors = self._cfg.validate_runtime_config()
@@ -101,11 +110,12 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         self._regex_filter = NapCatRegexFilter(logger=_logger)
         self._event_buffer = EventBuffer(max_size=self._cfg.buffer.event_buffer_size)
 
-        # 建立 WS 连接并启动接收循环
+        # 配置并启动 transport
+        self._transport.configure(self._cfg.napcat_server)
         await self._transport.start()
         self._heartbeat = NapCatHeartbeatMonitor(logger=_logger, on_timeout=self._on_heartbeat_timeout)
-        await self._heartbeat.start()
-        self._recv_task = asyncio.create_task(self._recv_loop(), name="napcat-recv")
+        await self._heartbeat.start(self_id="", default_interval_sec=30.0)
+
         self.ctx.logger.info("[napcat] 已连接 NapCat 服务器")
 
     async def on_unload(self) -> None:
@@ -149,6 +159,7 @@ class NapCatAdapterPlugin(MaiBotPlugin):
     async def _handle_transport_payload(self, payload: NapCatPayload) -> None:
         """路由 WS payload 到对应处理器。"""
         post_type = payload.get("post_type", "")
+
 
         if post_type == "message":
             await self._handle_message_event(payload)
@@ -198,12 +209,10 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         await self.ctx.emit_event(event_name, event_payload)
 
     async def _handle_meta_event(self, payload: NapCatPayload) -> None:
-        """处理元事件（heartbeat 等）→ 仅记录日志。"""
+        """处理元事件（heartbeat 等）→ 更新心跳监测。"""
         meta_type = payload.get("meta_event_type", "")
-        self.ctx.logger.debug("[napcat] meta_event: %s", meta_type)
-        if meta_type == "heartbeat":
-            if self._heartbeat is not None:
-                self._heartbeat.record_heartbeat()
+        if self._heartbeat is not None:
+            await self._heartbeat.observe_meta_event(payload, default_interval_sec=30.0)
 
     # ── @Event：消息入站声明 ─────────────────────────────────────
 

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class NapCatActionService:
     """NapCat 底层动作与资源访问服务。"""
 
-    def __init__(self, logger: Any, transport: "NapCatTransportClient") -> None:
+    def __init__(self, logger: Any = None, transport: "NapCatTransportClient" = None) -> None:
         """初始化底层动作服务。
 
         Args:

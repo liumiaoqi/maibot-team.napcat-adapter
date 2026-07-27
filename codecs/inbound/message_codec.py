@@ -6,10 +6,11 @@ v1 输出 MessageDict → v4 输出 Event payload dict（通过 ctx.emit_event �
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Mapping, Tuple, TYPE_CHECKING
 
-from ..cards import NapCatInboundCardMixin
-from ..text import NapCatInboundTextMixin
+from .cards import NapCatInboundCardMixin
+from .text import NapCatInboundTextMixin
+from ...types import NapCatSegments
 
 if TYPE_CHECKING:
     from ...session_mapper import SessionIdMapper
@@ -28,6 +29,111 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
         self._self_id = self_id
         self._query_service = query_service
         self._sid_mapper = sid_mapper
+
+    async def convert_segments_with_metadata(
+        self, payload: Dict[str, Any], self_id: str,
+    ) -> Tuple[NapCatSegments, Dict[str, Any]]:
+        """将 OneBot 11 消息数组转为 NapCatHostMessageSegment 列表 + 元数据。
+
+        Args:
+            payload: OneBot 11 消息事件 payload。
+            self_id: 机器人自身 QQ 号。
+
+        Returns:
+            (segments, metadata) — segments 为转换后的消息段列表，
+            metadata 包含 at 列表、reply 信息等。
+        """
+        raw_segments = payload.get("message", [])
+        if not isinstance(raw_segments, list):
+            raw_segments = []
+
+        segments: NapCatSegments = []
+        metadata: Dict[str, Any] = {
+            "at_user_ids": [],
+            "reply_message_id": None,
+            "platform_card_payloads": [],
+        }
+
+        for seg in raw_segments:
+            if not isinstance(seg, Mapping):
+                continue
+            seg_type = str(seg.get("type") or "").strip()
+            seg_data = seg.get("data", {})
+
+            if seg_type == "text":
+                text = str(seg_data.get("text", "") if isinstance(seg_data, Mapping) else seg_data or "")
+                segments.append(self._build_text_segment(text))
+
+            elif seg_type == "at":
+                if isinstance(seg_data, Mapping):
+                    at_qq = str(seg_data.get("qq", ""))
+                    if at_qq and at_qq != self_id:
+                        metadata["at_user_ids"].append(at_qq)
+                    at_name = str(
+                        seg_data.get("name")
+                        or seg_data.get("nickname")
+                        or ""
+                    ).strip()
+                    display = f"@{at_name}" if at_name else f"@{at_qq}"
+                    segments.append({"type": "at", "data": {"qq": at_qq, "name": at_name}})
+                    segments.append(self._build_text_segment(display))
+
+            elif seg_type == "reply":
+                reply_id = str(seg_data.get("id", "") if isinstance(seg_data, Mapping) else "")
+                metadata["reply_message_id"] = reply_id
+                segments.append({"type": "reply", "data": reply_id})
+
+            elif seg_type == "face":
+                face_id = str(seg_data.get("id", "0") if isinstance(seg_data, Mapping) else "0")
+                segments.append({"type": "face", "data": face_id})
+
+            elif seg_type == "image":
+                image_segment = await self._convert_image_segment(seg_data)
+                segments.append(image_segment)
+
+            elif seg_type == "json":
+                json_segments = await self._build_json_segments(
+                    seg_data if isinstance(seg_data, Mapping) else {"data": str(seg_data)},
+                    platform_card_payloads=metadata["platform_card_payloads"],
+                )
+                segments.extend(json_segments)
+
+            elif seg_type == "forward":
+                segments.append({"type": "forward", "data": str(seg_data.get("id", "") if isinstance(seg_data, Mapping) else "")})
+
+            elif seg_type in {"record", "video"}:
+                segments.append({"type": seg_type, "data": ""})
+
+            elif seg_type == "poke":
+                segments.append(self._build_text_segment("[戳一戳]"))
+
+            else:
+                fallback = f"[{seg_type}]" if seg_type else "[unsupported]"
+                segments.append(self._build_text_segment(fallback))
+
+        return segments, metadata
+
+    async def _convert_image_segment(self, seg_data: Any) -> Dict[str, Any]:
+        """将 OneBot 11 图片段转为 NapCatHostMessageSegment。
+
+        尝试下载图片获取二进制数据；失败则保留 URL 引用。
+        """
+        if not isinstance(seg_data, Mapping):
+            return {"type": "image", "data": ""}
+
+        image_url = str(seg_data.get("url") or "").strip()
+        if image_url:
+            binary_data = await self._query_service.download_binary(image_url)
+            if binary_data:
+                import hashlib
+                return {
+                    "type": "image",
+                    "data": "",
+                    "hash": hashlib.sha256(binary_data).hexdigest(),
+                    "binary_data_base64": self._encode_binary(binary_data),
+                }
+
+        return {"type": "image", "data": ""}
 
     async def build_event_payload(
         self, payload: Dict[str, Any],
@@ -66,7 +172,7 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             "qq_group_id": str(payload.get("group_id", "")) if message_type == "group" else "",
             "sender_name": str(sender.get("nickname", "")),
             "raw_message": raw_message,
-            "segments": [s.to_dict() for s in segments],
+            "segments": [dict(s) for s in segments],
             "timestamp": payload.get("time", 0),
             "is_group": message_type == "group",
         }

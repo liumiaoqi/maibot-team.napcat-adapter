@@ -6,11 +6,16 @@ from typing import Any, Mapping
 
 import base64
 
-from ...types import NapCatSegments
+from ...types import NapCatSegment, NapCatSegments
 
 
 class NapCatInboundTextMixin:
     """封装入站纯文本与二进制辅助逻辑。"""
+
+    @staticmethod
+    def _build_text_segment(text: str) -> NapCatSegment:
+        """构造文本消息段。"""
+        return {"type": "text", "data": text}
 
     def build_plain_text(self, raw_message: NapCatSegments) -> str:
         """从标准消息段中提取可展示的纯文本。

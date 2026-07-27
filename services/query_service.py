@@ -11,7 +11,7 @@ from .action_service import NapCatActionService
 class NapCatQueryService:
     """NapCat QQ 平台查询与管理动作服务。"""
 
-    def __init__(self, action_service: NapCatActionService, logger: Any) -> None:
+    def __init__(self, action_service: NapCatActionService = None, logger: Any = None) -> None:
         """初始化查询服务。
 
         Args:

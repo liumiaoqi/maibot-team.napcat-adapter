@@ -24,6 +24,9 @@
         "session:read:detail",
         "database:read:self",
         "database:write:self",
-        "system:execute:command"
+        "system:execute:command",
+        "message:receive:private",
+        "message:receive:group",
+        "message:receive:notice"
     ]
 }

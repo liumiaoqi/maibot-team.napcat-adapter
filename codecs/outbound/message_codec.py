@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple, TYPE_CHECKING
 
-from ..segment_encoder import NapCatOutboundSegmentEncoder
+from .segment_encoder import NapCatOutboundSegmentEncoder
 
 if TYPE_CHECKING:
     from ...session_mapper import SessionIdMapper

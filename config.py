@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -12,6 +14,14 @@ class NapCatServerConfig:
     http_url: str = "http://127.0.0.1:3000"
     access_token: str = ""
     connection_id: str = ""
+    token: str = ""
+    heartbeat_interval: float | None = None
+    reconnect_delay_sec: float = 5.0
+
+    def build_ws_url(self) -> str:
+        if self.connection_id:
+            return f"{self.ws_url}?connection_id={self.connection_id}"
+        return self.ws_url
 
 
 @dataclass
@@ -69,3 +79,44 @@ class NapCatConfig:
         if not self.napcat_server.http_url:
             errors.append("napcat_server.http_url")
         return errors
+
+    @classmethod
+    def from_toml(cls, path: Path) -> NapCatConfig:
+        """从 TOML 文件加载配置，缺失字段使用默认值。"""
+        if not path.is_file():
+            return cls()
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        server_data = data.get("napcat_server", {})
+        reconnect_data = data.get("reconnect", {})
+        buffer_data = data.get("buffer", {})
+        chat_data = data.get("chat", {})
+        filters_data = data.get("filters", {})
+        return cls(
+            napcat_server=NapCatServerConfig(
+                ws_url=server_data.get("ws_url", "ws://127.0.0.1:3001"),
+                http_url=server_data.get("http_url", "http://127.0.0.1:3000"),
+                access_token=server_data.get("access_token", ""),
+                connection_id=server_data.get("connection_id", ""),
+                token=server_data.get("access_token", ""),
+            ),
+            reconnect=ReconnectConfig(
+                max_retries=reconnect_data.get("max_retries", 10),
+                interval_sec=reconnect_data.get("interval_sec", 5.0),
+            ),
+            buffer=BufferConfig(
+                event_buffer_size=buffer_data.get("event_buffer_size", 1000),
+            ),
+            chat=ChatConfig(
+                enable_chat_list_filter=chat_data.get("enable_chat_list_filter", False),
+                group_list=chat_data.get("group_list", []),
+                private_list=chat_data.get("private_list", []),
+                ban_qq_bot=chat_data.get("ban_qq_bot", True),
+                ignore_self_message=chat_data.get("ignore_self_message", True),
+            ),
+            filters=FilterConfig(
+                regex_filter_enabled=filters_data.get("regex_filter_enabled", False),
+                regex_filter_mode=filters_data.get("regex_filter_mode", "whitelist"),
+                regex_filter_patterns=filters_data.get("regex_filter_patterns", []),
+            ),
+        )
