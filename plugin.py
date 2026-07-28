@@ -161,12 +161,16 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         post_type = payload.get("post_type", "")
         self.ctx.logger.info("[napcat] 收到 payload: post_type=%s", post_type)
 
-        if post_type == "message":
-            await self._handle_message_event(payload)
-        elif post_type == "notice":
-            await self._handle_notice_event(payload)
-        elif post_type == "meta_event":
-            await self._handle_meta_event(payload)
+        try:
+            if post_type == "message":
+                await self._handle_message_event(payload)
+            elif post_type == "notice":
+                await self._handle_notice_event(payload)
+            elif post_type == "meta_event":
+                await self._handle_meta_event(payload)
+        except Exception as exc:
+            self.ctx.logger.error("[napcat] _handle_transport_payload 异常: post_type=%s err=%s",
+                                  post_type, exc, exc_info=True)
 
     async def _handle_message_event(self, payload: NapCatPayload) -> None:
         """处理 OneBot 11 消息事件 → emit Event 到 Host。"""
@@ -184,29 +188,28 @@ class NapCatAdapterPlugin(MaiBotPlugin):
             if not self._regex_filter.should_process(event_payload.get("raw_message", ""), self._cfg.filters):
                 self.ctx.logger.debug("[napcat] _handle_message_event: regex_filter 拒绝，跳过")
                 return
+
+            msg_id = event_payload.get("message_id", "")
+            if self._event_buffer.is_duplicate(msg_id):
+                self.ctx.logger.debug("[napcat] _handle_message_event: 重复消息 %s，跳过", msg_id)
+                return
+
+            if self._transport is not None and not self._transport.is_connected:
+                self._event_buffer.enqueue(event_name, event_payload)
+                self.ctx.logger.debug("[napcat] _handle_message_event: transport 断连，已缓冲")
+                return
+
+            if self._event_buffer.size > 0:
+                await self._event_buffer.flush(self.ctx.emit_event)
+
+            self.ctx.logger.info("[napcat] emit_event: %s session=%s user=%s raw=%s",
+                                 event_name,
+                                 event_payload.get("session_id", "?"),
+                                 event_payload.get("qq_user_id", "?"),
+                                 event_payload.get("raw_message", "")[:50])
+            await self.ctx.emit_event(event_name, event_payload)
         except Exception as exc:
             self.ctx.logger.error("[napcat] _handle_message_event 失败: %s", exc, exc_info=True)
-            return
-
-        msg_id = event_payload.get("message_id", "")
-        if self._event_buffer.is_duplicate(msg_id):
-            self.ctx.logger.debug("[napcat] _handle_message_event: 重复消息 %s，跳过", msg_id)
-            return
-
-        if self._transport is not None and not self._transport.is_connected:
-            self._event_buffer.enqueue(event_name, event_payload)
-            self.ctx.logger.debug("[napcat] _handle_message_event: transport 断连，已缓冲")
-            return
-
-        if self._event_buffer.size > 0:
-            await self._event_buffer.flush(self.ctx.emit_event)
-
-        self.ctx.logger.info("[napcat] emit_event: %s session=%s user=%s raw=%s",
-                             event_name,
-                             event_payload.get("session_id", "?"),
-                             event_payload.get("qq_user_id", "?"),
-                             event_payload.get("raw_message", "")[:50])
-        await self.ctx.emit_event(event_name, event_payload)
 
     async def _handle_notice_event(self, payload: NapCatPayload) -> None:
         """处理 OneBot 11 通知事件 → emit Event 到 Host。"""

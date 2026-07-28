@@ -67,6 +67,11 @@ class NapCatTransportClient:
         """
         return AIOHTTP_AVAILABLE
 
+    @property
+    def is_connected(self) -> bool:
+        """当前 WebSocket 连接是否处于活跃状态。"""
+        return self._connection_active
+
     def configure(self, server_config: NapCatServerConfig) -> None:
         """更新当前传输层使用的 NapCat 服务端配置。
 
