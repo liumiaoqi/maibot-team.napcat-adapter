@@ -199,7 +199,7 @@ class NapCatAdapterPlugin(MaiBotPlugin):
                 self.ctx.logger.debug("[napcat] _handle_message_event: transport 断连，已缓冲")
                 return
 
-            if self._event_buffer.size > 0:
+            if self._event_buffer.size() > 0:
                 await self._event_buffer.flush(self.ctx.emit_event)
 
             self.ctx.logger.info("[napcat] emit_event: %s session=%s user=%s raw=%s",

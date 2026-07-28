@@ -19,6 +19,18 @@ class EventBuffer:
         self._max_size = max_size
         self._hard_limit = hard_limit
         self._dropped_count: int = 0
+        self._seen_ids: set[str] = set()
+
+    def is_duplicate(self, msg_id: str) -> bool:
+        if not msg_id:
+            return False
+        if msg_id in self._seen_ids:
+            return True
+        self._seen_ids.add(msg_id)
+        return False
+
+    def enqueue(self, event_name: str, payload: dict) -> bool:
+        return self.push(event_name, payload)
 
     def push(self, event_name: str, payload: dict) -> bool:
         """推入一个事件。超过硬限制时移除最早的。"""
