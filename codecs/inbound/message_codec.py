@@ -195,6 +195,7 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             "napcat_sub_type": sub_type,
             "qq_user_id": qq_user_id,
             "qq_group_id": group_id,
+            "sender_name": str(payload.get("nickname", "") or payload.get("sender", {}).get("nickname", "")),
             "raw": payload,
         }
         return "napcat.notice", event_payload

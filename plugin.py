@@ -175,18 +175,17 @@ class NapCatAdapterPlugin(MaiBotPlugin):
             return
         try:
             event_name, event_payload = await self._inbound_codec.build_event_payload(payload)
+            if not event_name:
+                self.ctx.logger.debug("[napcat] _handle_message_event: event_name 空（自身消息过滤），跳过")
+                return
+            if not self._chat_filter.should_process(event_payload, self._cfg.chat):
+                self.ctx.logger.debug("[napcat] _handle_message_event: chat_filter 拒绝，跳过")
+                return
+            if not self._regex_filter.should_process(event_payload.get("raw_message", ""), self._cfg.filters):
+                self.ctx.logger.debug("[napcat] _handle_message_event: regex_filter 拒绝，跳过")
+                return
         except Exception as exc:
-            self.ctx.logger.error("[napcat] build_event_payload 失败: %s", exc)
-            return
-        if not event_name:
-            self.ctx.logger.debug("[napcat] _handle_message_event: event_name 空（自身消息过滤），跳过")
-            return
-
-        if not self._chat_filter.should_process(event_payload):
-            self.ctx.logger.debug("[napcat] _handle_message_event: chat_filter 拒绝，跳过")
-            return
-        if not self._regex_filter.should_process(event_payload.get("raw_message", "")):
-            self.ctx.logger.debug("[napcat] _handle_message_event: regex_filter 拒绝，跳过")
+            self.ctx.logger.error("[napcat] _handle_message_event 失败: %s", exc, exc_info=True)
             return
 
         msg_id = event_payload.get("message_id", "")
@@ -222,7 +221,7 @@ class NapCatAdapterPlugin(MaiBotPlugin):
 
     async def _handle_meta_event(self, payload: NapCatPayload) -> None:
         """处理元事件（heartbeat 等）→ 更新心跳监测。"""
-        meta_type = payload.get("meta_event_type", "")
+        _meta_type = payload.get("meta_event_type", "")
         if self._heartbeat is not None:
             await self._heartbeat.observe_meta_event(payload, default_interval_sec=30.0)
 

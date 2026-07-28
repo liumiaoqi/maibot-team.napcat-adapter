@@ -70,6 +70,10 @@ class NapCatRegexFilter:
             return False
         return True
 
+    def should_process(self, plain_text: str, filter_config: FilterConfig) -> bool:
+        """适配方法：桥接 plugin.py 的调用约定到 is_message_allowed。"""
+        return self.is_message_allowed(plain_text, filter_config)
+
     def _matches_any_pattern(self, text: str) -> bool:
         """判断文本是否匹配任意一条已编译的正则表达式。
 
@@ -97,6 +101,14 @@ class NapCatChatFilter:
             logger: 插件日志对象。
         """
         self._logger = logger
+
+    def should_process(self, event_payload: dict, chat_config: ChatConfig) -> bool:
+        """适配方法：桥接 plugin.py 的调用约定到 is_inbound_chat_allowed。"""
+        return self.is_inbound_chat_allowed(
+            sender_user_id=str(event_payload.get("qq_user_id", "")),
+            group_id=str(event_payload.get("qq_group_id", "")),
+            chat_config=chat_config,
+        )
 
     def is_inbound_chat_allowed(
         self,
