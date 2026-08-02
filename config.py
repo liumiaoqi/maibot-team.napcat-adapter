@@ -56,6 +56,14 @@ class FilterConfig:
 
 
 @dataclass
+class MaimMessageBridgeConfig:
+    enabled: bool = True
+    ws_host: str = "127.0.0.1"
+    ws_port: int = 8000
+    reconnect_delay_sec: float = 5.0
+
+
+@dataclass
 class NapCatConfig:
     """NapCat 适配器完整配置。"""
     napcat_server: NapCatServerConfig = field(default_factory=NapCatServerConfig)
@@ -63,6 +71,7 @@ class NapCatConfig:
     buffer: BufferConfig = field(default_factory=BufferConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
+    maim_message_bridge: MaimMessageBridgeConfig = field(default_factory=MaimMessageBridgeConfig)
 
     def should_connect(self) -> bool:
         """是否应该建立与 NapCat 服务器的连接。
@@ -91,11 +100,12 @@ class NapCatConfig:
         reconnect_data = data.get("reconnect", {})
         buffer_data = data.get("buffer", {})
         chat_data = data.get("chat", {})
+        bridge_data = data.get("maim_message_bridge", {})
         filters_data = data.get("filters", {})
         return cls(
             napcat_server=NapCatServerConfig(
                 ws_url=server_data.get("ws_url", "ws://127.0.0.1:3001"),
-                http_url=server_data.get("http_url", "http://127.0.0.1:3000"),
+                http_url=server_data.get("http_url", "http://127.9.0.1:3000"),
                 access_token=server_data.get("access_token", ""),
                 connection_id=server_data.get("connection_id", ""),
                 token=server_data.get("access_token", ""),
@@ -118,5 +128,11 @@ class NapCatConfig:
                 regex_filter_enabled=filters_data.get("regex_filter_enabled", False),
                 regex_filter_mode=filters_data.get("regex_filter_mode", "whitelist"),
                 regex_filter_patterns=filters_data.get("regex_filter_patterns", []),
+            ),
+            maim_message_bridge=MaimMessageBridgeConfig(
+                enabled=bridge_data.get("enabled", True),
+                ws_host=bridge_data.get("ws_host", "127.0.0.1"),
+                ws_port=bridge_data.get("ws_port", 8000),
+                reconnect_delay_sec=bridge_data.get("reconnect_delay_sec", 5.0),
             ),
         )

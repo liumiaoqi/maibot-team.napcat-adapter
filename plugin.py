@@ -23,6 +23,7 @@ from .heartbeat_monitor import NapCatHeartbeatMonitor
 from .services import NapCatQueryService
 from .session_mapper import SessionIdMapper
 from .transport import NapCatTransportClient
+from .maim_message_bridge import MaimMessageBridge
 
 
 class NapCatAdapterPlugin(MaiBotPlugin):
@@ -58,6 +59,7 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         self._heartbeat: NapCatHeartbeatMonitor | None = None
         self._event_buffer = EventBuffer()
         self._recv_task: asyncio.Task | None = None
+        self._bridge: MaimMessageBridge | None = None
 
     def _load_config(self) -> None:
         """从插件目录下的 config.toml 加载配置。"""
@@ -124,6 +126,9 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         if self._recv_task is not None:
             self._recv_task.cancel()
             self._recv_task = None
+        if self._bridge is not None:
+            await self._bridge.stop()
+            self._bridge = None
         if self._heartbeat is not None:
             await self._heartbeat.stop()
         if self._transport is not None:
@@ -134,9 +139,21 @@ class NapCatAdapterPlugin(MaiBotPlugin):
 
     async def _on_ws_connected(self) -> None:
         self.ctx.logger.info("[napcat] WebSocket 已连接")
+        if self._cfg.maim_message_bridge.enabled:
+            self._bridge = MaimMessageBridge(
+                logger=self.ctx.logger,
+                ws_host=self._cfg.maim_message_bridge.ws_host,
+                ws_port=self._cfg.maim_message_bridge.ws_port,
+                on_outbound_message=self._handle_outbound_message,
+                reconnect_delay_sec=self._cfg.maim_message_bridge.reconnect_delay_sec,
+            )
+            await self._bridge.start()
 
     async def _on_ws_disconnected(self) -> None:
         self.ctx.logger.warning("[napcat] WebSocket 已断开")
+        if self._bridge is not None:
+            await self._bridge.stop()
+            self._bridge = None
 
     async def _on_heartbeat_timeout(self, reason: str) -> None:
         self.ctx.logger.warning("[napcat] 心跳超时: %s", reason)
@@ -328,3 +345,56 @@ class NapCatAdapterPlugin(MaiBotPlugin):
                 "[napcat] call_action %s 失败: %s", action, exc,
             )
             return {"success": False, "error": str(exc)}
+
+    async def _handle_outbound_message(self, payload: Dict[str, Any]) -> None:
+        """处理 maim_message WS 出站消息，桥接到 NapCat OneBot API。"""
+        if self._transport is None or not self._transport.is_connected:
+            self.ctx.logger.debug("[bridge] transport 未连接，跳过出站消息")
+            return
+        if self._outbound_codec is None:
+            self.ctx.logger.debug("[bridge] outbound_codec 未初始化，跳过出站消息")
+            return
+
+        try:
+            msg_info = payload.get("message_info", {})
+            session_id = msg_info.get("session_id", "")
+            group_info = msg_info.get("group_info") or {}
+            user_info = msg_info.get("user_info") or {}
+            group_id = group_info.get("group_id", "")
+            user_id = user_info.get("user_id", "")
+
+            raw_message = payload.get("raw_message") or []
+            if isinstance(raw_message, dict):
+                raw_message = raw_message.get("message", raw_message.get("content", []))
+            if not isinstance(raw_message, list):
+                raw_message = []
+
+            segments = []
+            for seg in raw_message:
+                seg_type = seg.get("type", "text")
+                seg_data = seg.get("data", {})
+                segments.append({"type": seg_type, "data": seg_data})
+
+            if not segments:
+                plain_text = payload.get("plain_text", "")
+                if plain_text:
+                    segments = [{"type": "text", "data": {"text": plain_text}}]
+                else:
+                    self.ctx.logger.debug("[bridge] 出站消息无内容，跳过")
+                    return
+
+            if not session_id:
+                if group_id:
+                    session_id = self._sid_mapper.calculate_group_session_id(group_id)
+                elif user_id:
+                    session_id = self._sid_mapper.calculate_private_session_id(user_id)
+
+            if not session_id:
+                self.ctx.logger.warning("[bridge] 无法确定 session_id，跳过出站消息")
+                return
+
+            action, params = self._outbound_codec.build_send_hybrid_action(session_id, segments)
+            result = await self._transport.call_action(action, params)
+            self.ctx.logger.info("[bridge] 出站消息已发送: action=%s session=%s", action, session_id)
+        except Exception as exc:
+            self.ctx.logger.warning("[bridge] 出站消息处理失败: %s", exc, exc_info=True)
