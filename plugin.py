@@ -357,44 +357,50 @@ class NapCatAdapterPlugin(MaiBotPlugin):
 
         try:
             msg_info = payload.get("message_info", {})
-            session_id = msg_info.get("session_id", "")
             group_info = msg_info.get("group_info") or {}
             user_info = msg_info.get("user_info") or {}
-            group_id = group_info.get("group_id", "")
-            user_id = user_info.get("user_id", "")
+            receiver_info = msg_info.get("receiver_info") or {}
+            receiver_user_info = receiver_info.get("user_info") or {}
 
-            raw_message = payload.get("raw_message") or []
-            if isinstance(raw_message, dict):
-                raw_message = raw_message.get("message", raw_message.get("content", []))
-            if not isinstance(raw_message, list):
-                raw_message = []
+            group_id = group_info.get("group_id", "")
+            # 私聊时接收者在 receiver_info.user_info.user_id（H3 修复：不走 sid_mapper，
+            # 直接用 group_id / user_id 构造 OneBot action——message_info 无 session_id 字段）
+            target_user_id = receiver_user_info.get("user_id", "") or user_info.get("user_id", "")
+
+            # H2 修复：字段名是 message_segment（seglist 结构），不是 raw_message
+            msg_segment = payload.get("message_segment", {})
+            if isinstance(msg_segment, dict):
+                raw_segments = msg_segment.get("data", [])
+            else:
+                raw_segments = []
+            if not isinstance(raw_segments, list):
+                raw_segments = []
 
             segments = []
-            for seg in raw_message:
+            for seg in raw_segments:
                 seg_type = seg.get("type", "text")
                 seg_data = seg.get("data", {})
-                segments.append({"type": seg_type, "data": seg_data})
+                # maim_message text 的 data 是字符串，需转为 dict
+                if seg_type == "text" and isinstance(seg_data, str):
+                    segments.append({"type": "text", "data": {"text": seg_data}})
+                else:
+                    segments.append({"type": seg_type, "data": seg_data})
 
             if not segments:
-                plain_text = payload.get("plain_text", "")
-                if plain_text:
-                    segments = [{"type": "text", "data": {"text": plain_text}}]
-                else:
-                    self.ctx.logger.debug("[bridge] 出站消息无内容，跳过")
-                    return
-
-            if not session_id:
-                if group_id:
-                    session_id = self._sid_mapper.calculate_group_session_id(group_id)
-                elif user_id:
-                    session_id = self._sid_mapper.calculate_private_session_id(user_id)
-
-            if not session_id:
-                self.ctx.logger.warning("[bridge] 无法确定 session_id，跳过出站消息")
+                self.ctx.logger.debug("[bridge] 出站消息无内容，跳过")
                 return
 
-            action, params = self._outbound_codec.build_send_hybrid_action(session_id, segments)
-            result = await self._transport.call_action(action, params)
-            self.ctx.logger.info("[bridge] 出站消息已发送: action=%s session=%s", action, session_id)
+            if group_id:
+                action = "send_group_msg"
+                params = {"group_id": group_id, "message": segments}
+            elif target_user_id:
+                action = "send_private_msg"
+                params = {"user_id": target_user_id, "message": segments}
+            else:
+                self.ctx.logger.warning("[bridge] 无法确定目标（无 group_id/user_id），跳过出站消息")
+                return
+
+            await self._transport.call_action(action, params)
+            self.ctx.logger.info("[bridge] 出站消息已发送: action=%s group=%s user=%s", action, group_id, target_user_id)
         except Exception as exc:
             self.ctx.logger.warning("[bridge] 出站消息处理失败: %s", exc, exc_info=True)
