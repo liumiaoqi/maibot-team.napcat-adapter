@@ -74,9 +74,9 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
                         or seg_data.get("nickname")
                         or ""
                     ).strip()
-                    display = f"@{at_name}" if at_name else f"@{at_qq}"
-                    segments.append({"type": "at", "data": {"qq": at_qq, "name": at_name}})
-                    segments.append(self._build_text_segment(display))
+                    segments.append({"type": "at", "data": {"target_user_id": at_qq, "target_user_nickname": at_name}})
+                    if not at_name:
+                        segments.append(self._build_text_segment(f"@{at_qq}"))
 
             elif seg_type == "reply":
                 reply_id = str(seg_data.get("id", "") if isinstance(seg_data, Mapping) else "")
@@ -102,7 +102,8 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
                 segments.append({"type": "forward", "data": str(seg_data.get("id", "") if isinstance(seg_data, Mapping) else "")})
 
             elif seg_type in {"record", "video"}:
-                segments.append({"type": seg_type, "data": ""})
+                emit_type = "voice" if seg_type == "record" else seg_type
+                segments.append({"type": emit_type, "data": ""})
 
             elif seg_type == "poke":
                 segments.append(self._build_text_segment("[戳一戳]"))
@@ -161,7 +162,7 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             self._sid_mapper.register_session(session_id, qq_user_id)
             event_name = "napcat.message"
 
-        segments, _ = await self.convert_segments_with_metadata(payload, self_id)
+        segments, metadata = await self.convert_segments_with_metadata(payload, self_id)
         raw_message = payload.get("raw_message", "")
         message_id = str(payload.get("message_id", ""))
 
@@ -171,10 +172,15 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             "qq_user_id": qq_user_id,
             "qq_group_id": str(payload.get("group_id", "")) if message_type == "group" else "",
             "sender_name": str(sender.get("nickname", "")),
+            "sender_card": sender.get("card") or None,
+            "group_name": payload.get("group_name") or None,
             "raw_message": raw_message,
             "segments": [dict(s) for s in segments],
             "timestamp": payload.get("time", 0),
             "is_group": message_type == "group",
+            "at_user_ids": metadata.get("at_user_ids", []),
+            "reply_message_id": metadata.get("reply_message_id"),
+            "platform_card_payloads": metadata.get("platform_card_payloads", []),
         }
 
     async def build_notice_event_payload(

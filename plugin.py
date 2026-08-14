@@ -331,6 +331,19 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         )
         return await self._call_transport(action, params)
 
+    @Tool(name="napcat.get_forward_msg", description="拉取合并转发消息节点列表")
+    async def tool_get_forward_msg(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        forward_id = args.get("forward_id") or args.get("id")
+        if not forward_id:
+            return {"success": False, "error": "forward_id 未提供"}
+        if self._query_service is None:
+            return {"success": False, "error": "QUERY_SERVICE_NOT_INITIALIZED"}
+        try:
+            data = await self._query_service.get_forward_message(forward_id=forward_id)
+            return {"success": True, "result": data}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
     async def _call_transport(
         self, action: str, params: Dict[str, Any],
     ) -> Dict[str, Any]:
