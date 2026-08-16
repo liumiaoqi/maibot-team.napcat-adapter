@@ -6,6 +6,7 @@ v1 输出 MessageDict → v4 输出 Event payload dict（通过 ctx.emit_event �
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Mapping, Tuple, TYPE_CHECKING
 
 from .cards import NapCatInboundCardMixin
@@ -15,6 +16,25 @@ from ...types import NapCatSegments
 if TYPE_CHECKING:
     from ...session_mapper import SessionIdMapper
     from ...services import NapCatQueryService
+
+
+def _resolve_napcat_timestamp(payload: dict, message_id: str) -> float:
+    """napcat timestamp 兜底（缺失/0 → 当前时间）。
+
+    spec 5.6.1 规则 1：适配器上报消息时若 timestamp 缺失或无效，必须兜底。
+    dsh review P1：适配器本地实现，不 import src.maisaka 内部模块（插件自治）。
+
+    Args:
+        payload: OneBot 11 消息事件 payload。
+        message_id: 消息 ID（保留参数，未来可从消息 ID 提取时间）。
+
+    Returns:
+        float timestamp — 有效不动（规则 2），缺失/0 兜底为当前时间（规则 1）。
+    """
+    raw_time = payload.get("time", 0)
+    if raw_time and raw_time > 0:
+        return float(raw_time)
+    return float(time.time())
 
 
 class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
@@ -176,7 +196,7 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             "group_name": payload.get("group_name") or None,
             "raw_message": raw_message,
             "segments": [dict(s) for s in segments],
-            "timestamp": payload.get("time", 0),
+            "timestamp": _resolve_napcat_timestamp(payload, message_id),
             "is_group": message_type == "group",
             "at_user_ids": metadata.get("at_user_ids", []),
             "reply_message_id": metadata.get("reply_message_id"),
