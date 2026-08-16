@@ -5,13 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Dict, Optional
-
-if TYPE_CHECKING:
-    try:
-        from aiohttp import ClientSession, ClientTimeout, WSMsgType
-    except ImportError:
-        pass
+from typing import Any, Callable, Coroutine, Dict, Optional
 
 
 class MaimMessageBridge:
