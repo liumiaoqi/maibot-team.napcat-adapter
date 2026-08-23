@@ -14,18 +14,22 @@ class EventBuffer:
     flush 失败时保留未重放的部分不丢弃。
     """
 
-    def __init__(self, max_size: int = 1000, hard_limit: int = 5000) -> None:
+    def __init__(self, max_size: int = 1000, hard_limit: int = 5000, dedup_limit: int = 10000) -> None:
         self._events: list[tuple[str, dict]] = []
         self._max_size = max_size
         self._hard_limit = hard_limit
         self._dropped_count: int = 0
         self._seen_ids: set[str] = set()
+        self._dedup_limit = dedup_limit
 
     def is_duplicate(self, msg_id: str) -> bool:
         if not msg_id:
             return False
         if msg_id in self._seen_ids:
             return True
+        # _seen_ids 加上限清理，防止内存无限增长（A25b P1-1 内存泄漏）
+        if len(self._seen_ids) >= self._dedup_limit:
+            self._seen_ids.clear()
         self._seen_ids.add(msg_id)
         return False
 

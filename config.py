@@ -105,7 +105,7 @@ class NapCatConfig:
         return cls(
             napcat_server=NapCatServerConfig(
                 ws_url=server_data.get("ws_url", "ws://127.0.0.1:3001"),
-                http_url=server_data.get("http_url", "http://127.9.0.1:3000"),
+                http_url=server_data.get("http_url", "http://127.0.0.1:3000"),
                 access_token=server_data.get("access_token", ""),
                 connection_id=server_data.get("connection_id", ""),
                 token=server_data.get("access_token", ""),
