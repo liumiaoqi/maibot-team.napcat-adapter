@@ -10,8 +10,8 @@ import asyncio
 import json
 
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_STORAGE_PATH = _PROJECT_ROOT / "data" / "napcat_adapter" / "ban_state.json"
+_PLUGIN_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_STORAGE_PATH = _PLUGIN_ROOT / "data" / "napcat_adapter" / "ban_state.json"
 
 
 @dataclass
