@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from src.plugin_runtime_v2.sdk import MaiBotPlugin, Event, Tool
+from src.plugin_runtime_v2.sdk import MaiBotPlugin, Event, MessageGateway, Tool
 
 from .codecs.inbound.message_codec import NapCatInboundCodec
 from .codecs.outbound.message_codec import NapCatOutboundCodec
@@ -67,6 +67,24 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         plugin_file = Path(inspect.getfile(type(self)))
         config_path = plugin_file.parent / "config.toml"
         self._cfg = NapCatConfig.from_toml(config_path)
+
+    # ── 消息网关声明 ───────────────────────────────────────────
+
+    @MessageGateway(
+        name="qq_gateway",
+        platform="qq",
+        protocol="onebot11",
+        supports_send=True,
+        supports_receive=False,
+        metadata={"tool_name": "napcat.send_text"},
+    )
+    async def qq_message_gateway(self) -> None:
+        """声明：QQ 平台消息发送网关。
+
+        WS 连接成功后通过 ctx.report_gateway_ready 上报就绪，
+        Host 收到后注册 PluginPlatformDriver 并绑定路由。
+        """
+        pass
 
     # ── 生命周期 ──────────────────────────────────────────────
 
@@ -139,6 +157,8 @@ class NapCatAdapterPlugin(MaiBotPlugin):
 
     async def _on_ws_connected(self) -> None:
         self.ctx.logger.info("[napcat] WebSocket 已连接")
+        # 上报网关就绪，触发 Host 注册 PluginPlatformDriver
+        await self.ctx.report_gateway_ready("qq_gateway")
         if self._cfg.maim_message_bridge.enabled:
             self._bridge = MaimMessageBridge(
                 logger=self.ctx.logger,
@@ -151,6 +171,8 @@ class NapCatAdapterPlugin(MaiBotPlugin):
 
     async def _on_ws_disconnected(self) -> None:
         self.ctx.logger.warning("[napcat] WebSocket 已断开")
+        # 上报网关未就绪，触发 Host 注销驱动和路由绑定
+        await self.ctx.report_gateway_not_ready("qq_gateway")
         if self._bridge is not None:
             await self._bridge.stop()
             self._bridge = None
