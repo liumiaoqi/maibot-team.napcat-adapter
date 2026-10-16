@@ -8,7 +8,7 @@
         "name": "MaiBot Team",
         "url": "https://github.com/Mai-with-u"
     },
-    "license": "GPL-3.0-or-later",
+    "license": "MIT",
     "host_application": {
         "min_version": "1.0.0"
     },
