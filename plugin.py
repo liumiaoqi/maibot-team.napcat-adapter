@@ -309,15 +309,34 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         pass
 
     # ── @Tool：发送消息 ───────────────────────────────────────
+    # ⚠️ `parameters_schema` 的 `required` 必须**只列处理器硬索引的键**：
+    # `args["x"]` ⇒ required；`args.get("x", …)` ⇒ optional（否则会误拒合法调用）。
+    # 宿主侧 `runner/tool_router.py:141` 在调用前用这份 schema 校验（P0-a，2026-10-16）。
 
-    @Tool(name="napcat.send_text", description="发送文本消息到 QQ")
+    @Tool(
+        name="napcat.send_text",
+        description="发送文本消息到 QQ",
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["session_id", "text"],
+        },
+    )
     async def tool_send_text(self, args: Dict[str, Any]) -> Dict[str, Any]:
         session_id = args["session_id"]
         text = args["text"]
         action, params = self._outbound_codec.build_send_text_action(session_id, text)
         return await self._call_transport(action, params)
 
-    @Tool(name="napcat.send_image", description="发送图片消息到 QQ")
+    @Tool(
+        name="napcat.send_image",
+        description="发送图片消息到 QQ",
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}, "image_base64": {"type": "string"}},
+            "required": ["session_id", "image_base64"],
+        },
+    )
     async def tool_send_image(self, args: Dict[str, Any]) -> Dict[str, Any]:
         session_id = args["session_id"]
         image_base64 = args["image_base64"]
@@ -326,7 +345,15 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         )
         return await self._call_transport(action, params)
 
-    @Tool(name="napcat.send_emoji", description="发送表情包到 QQ")
+    @Tool(
+        name="napcat.send_emoji",
+        description="发送表情包到 QQ",
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}, "emoji_base64": {"type": "string"}},
+            "required": ["session_id", "emoji_base64"],
+        },
+    )
     async def tool_send_emoji(self, args: Dict[str, Any]) -> Dict[str, Any]:
         session_id = args["session_id"]
         emoji_base64 = args["emoji_base64"]
@@ -335,7 +362,15 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         )
         return await self._call_transport(action, params)
 
-    @Tool(name="napcat.send_forward", description="转发消息到 QQ")
+    @Tool(
+        name="napcat.send_forward",
+        description="转发消息到 QQ",
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}, "message_id": {"type": "string"}},
+            "required": ["session_id", "message_id"],
+        },
+    )
     async def tool_send_forward(self, args: Dict[str, Any]) -> Dict[str, Any]:
         session_id = args["session_id"]
         message_id = args["message_id"]
@@ -344,7 +379,19 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         )
         return await self._call_transport(action, params)
 
-    @Tool(name="napcat.send_hybrid", description="发送混合消息到 QQ")
+    @Tool(
+        name="napcat.send_hybrid",
+        description="发送混合消息到 QQ",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                # segments 由处理器用 args.get(..., "[]") 读取 ⇒ 可选，不列 required
+                "segments": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    )
     async def tool_send_hybrid(self, args: Dict[str, Any]) -> Dict[str, Any]:
         session_id = args["session_id"]
         segments = json.loads(args.get("segments", "[]"))
@@ -353,7 +400,16 @@ class NapCatAdapterPlugin(MaiBotPlugin):
         )
         return await self._call_transport(action, params)
 
-    @Tool(name="napcat.get_forward_msg", description="拉取合并转发消息节点列表")
+    @Tool(
+        name="napcat.get_forward_msg",
+        description="拉取合并转发消息节点列表",
+        # 两个键都是 args.get 软读（缺了自己返回 error 字典）⇒ required 为空，不许误拒
+        parameters_schema={
+            "type": "object",
+            "properties": {"forward_id": {"type": "string"}, "id": {"type": "string"}},
+            "required": [],
+        },
+    )
     async def tool_get_forward_msg(self, args: Dict[str, Any]) -> Dict[str, Any]:
         forward_id = args.get("forward_id") or args.get("id")
         if not forward_id:
