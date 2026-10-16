@@ -6,6 +6,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .constants import DEFAULT_ACTION_TIMEOUT_SEC
+
 
 @dataclass
 class NapCatServerConfig:
@@ -17,6 +19,11 @@ class NapCatServerConfig:
     token: str = ""
     heartbeat_interval: float | None = None
     reconnect_delay_sec: float = 5.0
+    # 单次 call_action 的等待上限——`transport.py` 的 `call_action` 会读它。
+    # ⚠️ 2026-10-16 补：此前 `transport.py:148` 读 `server_config.action_timeout_sec`，
+    # 而本类**没有**这个字段 ⇒ 每次发送都在 `AttributeError` 上失败（"能收不能发"的第五层）。
+    # 常量 `DEFAULT_ACTION_TIMEOUT_SEC` 早就在 `constants.py` 里，只是没接进本类。
+    action_timeout_sec: float = DEFAULT_ACTION_TIMEOUT_SEC
 
     def build_ws_url(self) -> str:
         if self.connection_id:
