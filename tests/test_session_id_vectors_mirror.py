@@ -25,7 +25,7 @@ uv run --project <主仓根> pytest plugins/maibot-team.napcat-adapter/tests/tes
 
 ⚠️ **本探针现在跑在「宿主环境」下**（借用主仓的 `uv run`）：这足以证明
 "插件算法 × 插件副本"对得上宿主表，但**不能**证明插件在**自己的依赖环境**里也跑得绿。
-**插件仓自己的 CI 应在其自有环境跑本探针**（本仓 `manifest.json` 声明了 sdk/host 版本面，
+**插件仓自己的 CI 应在其自有环境跑本探针**（本仓 `_manifest.json` 声明了 sdk/host 版本面，
 那份环境是插件的真实验收面；这里借来的解释器只是权宜）。
 
 ## 副本是哪来的
